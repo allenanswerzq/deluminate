@@ -56,5 +56,8 @@
       "browser": true,
       "webextensions": true
     }
+  },
+  "webExt": {
+    "ignoreFiles": ["spec", "deploy"]
   }
 }

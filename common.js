@@ -7,6 +7,11 @@ let settings = new Settings(DEFAULT_FILTER);
 
 let migrationTask;
 async function migrateFromLocalStorage() {
+  if (typeof chrome.offscreen == "undefined") {
+    // Firefox doesn't support the offscreen API, but this migration is only
+    // needed for Chrome anyway.
+    return;
+  }
   const {migrationComplete} = await chrome.storage.local.get(['migrationComplete']);
   if (migrationComplete >= 2) {
     return;

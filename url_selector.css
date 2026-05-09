@@ -6,7 +6,7 @@
   user-select: none;
   text-wrap: nowrap;
   max-height: 100px;
-  overflow-y: scroll;
+  overflow-y: auto;
 }
 .url_selector span {
   background-color: #222;

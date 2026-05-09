@@ -20,14 +20,14 @@ async function migrateFromLocalStorage() {
       await chrome.offscreen.createDocument({
         url: 'migrate.html',
         reasons: ['LOCAL_STORAGE'],
-        justification: 'migrating local storage to cloud sync storage',
+        justification: 'migrating old local storage to modern chrome local storage',
       });
     } catch {
       // Already created. That's fine, just send the message.
     }
     const [{value: remoteSettings}, {value: {localStorage}}] = await Promise
       .allSettled([
-        chrome.storage.sync.get(),
+        chrome.storage.local.get(),
         chrome.runtime.sendMessage({target: 'offscreen', action: 'migrate'}),
     ]);
     if (remoteSettings) {
@@ -118,7 +118,7 @@ export async function syncStore() {
 }
 
 export async function refreshStore() {
-  const items = await chrome.storage.sync.get();
+  const items = await chrome.storage.local.get();
   Object.assign(storeCache, items);
   settings = Settings.import(storeCache?.sites, DEFAULT_FILTER);
   settings.import((await chrome.storage.local.get("sites"))["sites"] ?? []);
@@ -127,7 +127,7 @@ export async function refreshStore() {
 
 export function storeSet(key, value) {
   storeCache[key] = value;
-  return chrome.storage.sync.set({[key]: value});
+  return chrome.storage.local.set({[key]: value});
 }
 
 export function $(id) {
@@ -158,14 +158,14 @@ export function setSiteSettings(site, siteSettings) {
 }
 
 export async function delSiteSettings(site) {
-  const {sites} = await chrome.storage.sync.get("sites");
+  const {sites} = await chrome.storage.local.get("sites");
 
   return await storeSet("sites", sites.filter(siteRow => siteRow[0] !== site));
 }
 
 export async function resetSiteSchemes() {
-  await chrome.storage.sync.remove(
-    Object.keys(await chrome.storage.sync.get())
+  await chrome.storage.local.remove(
+    Object.keys(await chrome.storage.local.get())
   );
   for (const key of Object.keys(storeCache)) {
     delete storeCache[key];

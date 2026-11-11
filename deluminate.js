@@ -4,7 +4,10 @@ let backdrop;
 let animGifHandler;
 let newImageHandler;
 let rootWatcher;
+let themeWatcher;
+let themeCheckPending = false;
 const rootAttribute = "hc";
+const looksDarkAttribute = "looks-dark";
 
 function onExtensionMessage(request, sender, sendResponse) {
   if (chrome.runtime.lastError) {
@@ -19,6 +22,7 @@ function onExtensionMessage(request, sender, sendResponse) {
   if (rootWatcher) {
     rootWatcher.disconnect();
   }
+  themeWatcher?.disconnect();
   if (request.enabled && request.scheme != 'normal') {
     const hc = scheme_prefix + request.scheme + ' ' + request.modifiers.join(' ');
     document.documentElement.setAttribute(rootAttribute, hc);
@@ -66,6 +70,7 @@ function onExtensionMessage(request, sender, sendResponse) {
       && request.scheme.indexOf("delumine") >= 0
       && request.modifiers.indexOf("dynamic") >= 0
   ) {
+    watchPageTheme();
     afterDomLoaded(() => {
       detectAlreadyDark();
       backdrop.style.display = "none";
@@ -282,16 +287,91 @@ function restartDeepImageProcessing() {
 let detectAlreadyDarkComplete = false;
 function detectAlreadyDark() {
   if (detectAlreadyDarkComplete) return;
+  // The painted page background is the most direct signal. Text sampling at
+  // DOMContentLoaded misreads pages that render late, such as YouTube.
+  const background = siteBackgroundValence();
+  if (background !== null) {
+    setLooksDark(background < 0);
+    detectAlreadyDarkComplete = true;
+    return;
+  }
   const textColor = classifyTextColor();
   if (textColor === "light") {
     // Light text means dark mode... probably.
-    document.documentElement.setAttribute('looks-dark', '');
+    setLooksDark(true);
   } else if (textColor !== "dark" && checksPreferredScheme()) {
-    document.documentElement.setAttribute('looks-dark', '');
+    setLooksDark(true);
   } else {
-    document.documentElement.removeAttribute('looks-dark');
+    setLooksDark(false);
   }
   detectAlreadyDarkComplete = true;
+}
+
+function setLooksDark(dark) {
+  if (dark) {
+    document.documentElement.setAttribute(looksDarkAttribute, '');
+  } else {
+    document.documentElement.removeAttribute(looksDarkAttribute);
+  }
+}
+
+// Return -1 for a dark page background, 1 for a light one, or null when the
+// background does not decide it.
+function siteBackgroundValence() {
+  const opaqueBackground = (element) => {
+    if (!element) return null;
+    const color = colorToRGBA(getComputedStyle(element).backgroundColor);
+    return color[3] === 255 ? color : null;
+  };
+  const body = opaqueBackground(document.body);
+  // deluminate.css paints a transparent body white, or black once the page
+  // looks dark, so that color only counts when the root has none.
+  const fallback = document.documentElement.hasAttribute(looksDarkAttribute)
+    ? 0 : 255;
+  const bodyIsFallback = body?.slice(0, 3).every((c) => c === fallback);
+  const color = body && !bodyIsFallback ? body
+    : opaqueBackground(document.documentElement);
+  if (!color) return null;
+  return colorValenceRaw(...color) || null;
+}
+
+// Pages can paint their background before DOMContentLoaded, finish styling
+// after it, or switch themes later by changing root or body attributes.
+// Recheck on each of those; an undecided background keeps the last answer.
+function recheckPageTheme() {
+  if (themeCheckPending || checkDisconnected()) return;
+  themeCheckPending = true;
+  requestAnimationFrame(() => {
+    themeCheckPending = false;
+    const background = siteBackgroundValence();
+    if (background !== null) setLooksDark(background < 0);
+  });
+}
+
+function onStylesheetLoad({target}) {
+  if (target instanceof HTMLLinkElement || target instanceof HTMLStyleElement) {
+    recheckPageTheme();
+  }
+}
+
+function watchPageTheme() {
+  themeWatcher ??= new MutationObserver((mutations) => {
+    if (document.body) themeWatcher.observe(document.body, {attributes: true});
+    if (mutations.some(({type, attributeName}) => type === "childList" ||
+      (attributeName !== rootAttribute && attributeName !== looksDarkAttribute))) {
+      recheckPageTheme();
+    }
+  });
+  themeWatcher.observe(document.documentElement, {attributes: true, childList: true});
+  if (document.body) themeWatcher.observe(document.body, {attributes: true});
+  if (document.readyState !== "complete") {
+    document.addEventListener("load", onStylesheetLoad, true);
+    window.addEventListener("load", () => {
+      document.removeEventListener("load", onStylesheetLoad, true);
+      recheckPageTheme();
+    }, {once: true});
+  }
+  recheckPageTheme();
 }
 
 function afterDomLoaded(cb) {
@@ -382,6 +462,10 @@ function classifyTextColor() {
 }
 
 function checksPreferredScheme() {
+  // A site's dark styles only apply when the browser prefers a dark scheme.
+  if (!window.matchMedia("(prefers-color-scheme: dark)").matches) {
+    return false;
+  }
   for (const css of document?.styleSheets ?? []) {
     try {
       for (const m of css.media ?? []) {
@@ -455,7 +539,7 @@ function init() {
 }
 
 function unloadAll() {
-  const watchers = [animGifHandler, newImageHandler, rootWatcher];
+  const watchers = [animGifHandler, newImageHandler, rootWatcher, themeWatcher];
   for (const watcher of watchers) {
     if (watcher?.disconnect) {
       watcher.disconnect();

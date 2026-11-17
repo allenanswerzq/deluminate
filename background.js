@@ -1,4 +1,4 @@
-import "./managed-settings.js";
+import {watchManagedSettings} from "./managed-settings.js";
 import {Filter, Modifier} from './utils.js';
 import {
   DEFAULT_SCHEME,
@@ -210,7 +210,7 @@ function init() {
   });
 
   let asyncInitializing = true;
-  (async () => {
+  const initialized = (async () => {
     try {
       console.log("Fetching settings.");
       await syncStore();
@@ -221,6 +221,7 @@ function init() {
       asyncInitializing = false;
     }
   })();
+  watchManagedSettings(initialized);
 
   chrome.runtime.onInstalled.addListener(async ({reason}) => {
     console.log(`Install event - reason: ${reason}`);

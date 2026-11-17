@@ -1,3 +1,4 @@
+import "./managed-settings.js";
 import {Filter, Modifier} from './utils.js';
 import {
   DEFAULT_SCHEME,
